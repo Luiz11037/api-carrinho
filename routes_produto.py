@@ -1,104 +1,109 @@
 from flask import request
-from app import app
-from models import produtos
-from utils import procurar_por_id
-
-"""
-POST /produto/save (criar produto)
-PUT /produto/{id}/update (atualizar produto)
-GET /produto/{id} (busca um produto)
-GET /produto/all (busca todos os produto)
-DELETE /produto/{id}/delete (deletar produto)
-POST /carrinho/addProduto/{id}?quantidade={quantidade} (adicionar produto no carrinho)
-DELETE /carrinho/removerProduto/1?quantidade={quantidade} (remover produto do carrinho)
-DELETE /carrinho/limpar (remover todos os produtos do carrinho)
-GET /carrinho/mostrar (busca o carrinho
-"""
+from app import app, db
+from models import Produto
 
 
-#Boas Vindas
+
+# Rota raiz
 @app.route("/")
 def home():
     return {"mensagem": "Bem Vindo a api-carrinho"}
 
 
-#Listar todos os produtos
+
+# Listar todos os produtos
 @app.route("/produto/all", methods=["GET"])
 def get_produtos():
-    return {"PRODUTOS": produtos}
+    # Buscar todos os produtos no banco
+    produtos = Produto.query.all()
+    
+    # Transformar objetos Produto em dicionário para JSON
+    lista = []
+    for p in produtos:
+        lista.append({
+            "id": p.id,
+            "nome": p.nome,
+            "marca": p.marca,
+            "preco": p.preco,
+            "descricao": p.descricao
+        })
+    return {"PRODUTOS": lista}
 
 
+
+# Criar novo produto
 @app.route("/produto/save", methods=["POST"])
 def post_produto():
-    #dados do json
     dados_json = request.json
 
-    #variável com os dados obrigatórios
-    obrigatorio = ["nome", "marca", "preco", "descricao"]
-    
-    #Verificar se os dados do json vieram com todos os campos obrigatórios.
-    #Apenas um produto por vez.
-    for dado_obrigatorio in obrigatorio:
-        if dado_obrigatorio not in dados_json:
-            return {"erro": f"Dado faltando: {dado_obrigatorio}"}, 400 #Error
-    
-    #Implementação de um id automático
-    produto_para_adicionar = {
-        "id": len(produtos) + 1,
-        "nome": dados_json["nome"],
-        "marca": dados_json["marca"],
-        "preco": dados_json["preco"],
-        "descricao": dados_json["descricao"]
-    }
-    #dados_json adicionado a produtos.
-    produtos.append(produto_para_adicionar)
-    return produto_para_adicionar, 201 #201 - Recurso criado
-
-#Pesquisar produto por id.
-#Definindo uma função
-def procurar_por_id(id):
-    # procurar em produtos por um id igual, para ao encontrar. 
-    return next((p for p in produtos if p["id"] == id), None)
-
-@app.route("/produto/<int:id>/buscar")
-def get_produto_especifico(id):
-
-    produto =  procurar_por_id(id)
-    if not produto:
-        return {"erro": "Produto não encontrado"}, 404
-    return {"produto encontrado": produto}
-
-
-#atualizar um produto pelo id
-@app.route("/produto/<int:id>/update", methods=["PUT"])
-def update_produto(id):
-
-    #pegar dados do JSON
-    dados_json = request.json
-
-    #dados obrigatórios
     obrigatorio = ["nome", "marca", "preco", "descricao"]
     for campo in obrigatorio:
         if campo not in dados_json:
             return {"erro": f"Dado faltando: {campo}"}, 400
 
-    # procurar o produto pelo campo "id"
-    produto = procurar_por_id(id)
+    # Criando objeto Produto (representa uma linha no banco)
+    novo_produto = Produto(
+        nome=dados_json["nome"],
+        marca=dados_json["marca"],
+        preco=dados_json["preco"],
+        descricao=dados_json["descricao"]
+    )
+
+    # Salvando no banco
+    db.session.add(novo_produto)
+    db.session.commit()
+
+    return {"mensagem": "Produto criado", "id": novo_produto.id}, 201
+
+
+
+# Buscar produto por ID
+@app.route("/produto/<int:id>/buscar")
+def get_produto_especifico(id):
+    # Busca no banco
+    produto = Produto.query.get(id)
+
     if not produto:
         return {"erro": "Produto não encontrado"}, 404
-    
-    # atualizar produto
-    produto.update(dados_json)
 
-    return {"produto_atualizado": produto}, 200
+    return {
+        "id": produto.id,
+        "nome": produto.nome,
+        "marca": produto.marca,
+        "preco": produto.preco,
+        "descricao": produto.descricao
+    }
 
+
+
+# Atualizar produto
+@app.route("/produto/<int:id>/update", methods=["PUT"])
+def update_produto(id):
+    dados_json = request.json
+
+    produto = Produto.query.get(id)
+    if not produto:
+        return {"erro": "Produto não encontrado"}, 404
+
+    # Atualizando campos
+    produto.nome = dados_json["nome"]
+    produto.marca = dados_json["marca"]
+    produto.preco = dados_json["preco"]
+    produto.descricao = dados_json["descricao"]
+
+    db.session.commit()
+
+    return {"mensagem": f"{produto.nome} atualizado"}
+
+
+# Deletar produto
 @app.route("/produto/<int:id>/delete", methods=["DELETE"])
 def deletar_produto(id):
-
-    # procurar o produto pelo campo "id"
-    produto = procurar_por_id(id)
+    produto = Produto.query.get(id)
     if not produto:
         return {"erro": "Produto não encontrado"}, 404
-    
-    produtos.remove(produto)
-    return {"produto": produto}
+
+    db.session.delete(produto)
+    db.session.commit()
+
+    return {"mensagem": "Produto deletado"}
